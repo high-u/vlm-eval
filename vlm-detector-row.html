@@ -264,16 +264,16 @@
                 text: `Detect objects in this image.
 
 Output format (one object per line):
-name,x1,y1,x2,y2,text
+x1,y1,x2,y2,name,text
 
-- name: object name
 - x1,y1,x2,y2 are bounding box coordinates
+- name: object name
 - text: extracted words on object, empty if none
 - Max 10 objects
 
 Example:
-book,100,200,350,400,Hello World
-cup,500,300,700,550,`
+100,200,350,400,book,Hello World
+500,300,700,550,cup,`
               },
               {
                 type: 'image_url',
@@ -290,21 +290,21 @@ cup,500,300,700,550,`
     function parseDetections(content) {
       const lines = content.split('\n');
       const detections = [];
-      // Pattern: label followed by 4 comma-separated numbers
-      const pattern = /^[^,]+,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+/;
+      // Pattern: 4 comma-separated numbers followed by name
+      const pattern = /^\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,/;
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
         if (pattern.test(trimmed)) {
-          // New object
+          // New object: x1,y1,x2,y2,name,text
           const parts = trimmed.split(',');
-          const coords = parts.slice(1, 5).map(s => parseInt(s.trim(), 10));
+          const coords = parts.slice(0, 4).map(s => parseInt(s.trim(), 10));
           if (coords.some(isNaN)) continue;
 
           detections.push({
-            label: parts[0].trim(),
+            name: parts[4] ? parts[4].trim() : '',
             bbox_2d: coords,
             text: parts.length > 5 ? parts.slice(5).join(',').trim() || null : null
           });
@@ -358,21 +358,21 @@ cup,500,300,700,550,`
         ctx.lineWidth = 3;
         ctx.strokeRect(x1, y1, boxWidth, boxHeight);
 
-        // Prepare label text
-        let label = det.label || 'Object ' + (i + 1);
+        // Prepare name text
+        let name = det.name || 'Object ' + (i + 1);
 
-        // Draw label background
+        // Draw name background
         ctx.font = 'bold 14px sans-serif';
-        const textMetrics = ctx.measureText(label);
+        const textMetrics = ctx.measureText(name);
         const textWidth = textMetrics.width + 8;
         const textHeight = 20;
 
         ctx.fillStyle = color;
         ctx.fillRect(x1, y1 - textHeight, textWidth, textHeight);
 
-        // Draw label text
+        // Draw name text
         ctx.fillStyle = '#000';
-        ctx.fillText(label, x1 + 4, y1 - 5);
+        ctx.fillText(name, x1 + 4, y1 - 5);
       });
     }
 
