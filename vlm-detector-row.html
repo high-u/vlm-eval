@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VLM Object Detector</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #00d9ff;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .btn {
+      background: #00d9ff;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      background: #00b8d9;
+      transform: translateY(-1px);
+    }
+    .btn:disabled {
+      background: #555;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status {
+      padding: 12px 24px;
+      border-radius: 6px;
+      background: #333;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .status.loading {
+      background: #ff9800;
+      color: #000;
+    }
+    .status.error {
+      background: #f44336;
+    }
+    .status.success {
+      background: #4caf50;
+    }
+    .canvas-container {
+      background: #0f0f1a;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 400px;
+      border: 3px dashed transparent;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .canvas-container.drag-over {
+      border-color: #00d9ff;
+      background: #1a2a3a;
+    }
+    .canvas-container.drag-over::after {
+      content: 'Drop image here';
+      position: absolute;
+      color: #00d9ff;
+      font-size: 24px;
+      font-weight: 600;
+      pointer-events: none;
+    }
+    #canvas {
+      max-width: 100%;
+      max-height: 70vh;
+    }
+    .response-section {
+      background: #0f0f1a;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .response-section h2 {
+      margin-bottom: 10px;
+      color: #00d9ff;
+      font-size: 16px;
+    }
+    .response-content {
+      background: #000;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+      color: #a5d6ff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>VLM Object Detector</h1>
+
+    <div class="controls">
+      <input type="file" id="fileInput" accept="image/*">
+      <label for="fileInput" class="btn">Select Image</label>
+      <button id="detectBtn" class="btn" disabled>Detect Objects</button>
+      <span id="status" class="status">Ready</span>
+    </div>
+
+    <div class="canvas-container" id="dropZone">
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="response-section">
+      <h2>API Response</h2>
+      <div id="response" class="response-content">No response yet</div>
+    </div>
+
+    <div class="response-section">
+      <h2>Parsed Result</h2>
+      <div id="parsed" class="response-content">No response yet</div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://127.0.0.1:8080/v1/chat/completions';
+    const MODEL = 'qwen';
+
+    const fileInput = document.getElementById('fileInput');
+    const detectBtn = document.getElementById('detectBtn');
+    const statusEl = document.getElementById('status');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const responseEl = document.getElementById('response');
+    const parsedEl = document.getElementById('parsed');
+    const dropZone = document.getElementById('dropZone');
+
+    let currentImage = null;
+    let imageDataUrl = null;
+
+    // Handle file processing
+    function processFile(file) {
+      if (!file || !file.type.startsWith('image/')) {
+        setStatus('Please drop an image file', 'error');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        imageDataUrl = event.target.result;
+        const img = new Image();
+        img.onload = () => {
+          currentImage = img;
+          drawImage(img);
+          detectBtn.disabled = false;
+          setStatus('Image loaded: ' + img.width + 'x' + img.height, 'success');
+        };
+        img.src = imageDataUrl;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // File selection handler
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) processFile(file);
+    });
+
+    // Drag and drop handlers
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    });
+
+    // Detect button handler
+    detectBtn.addEventListener('click', async () => {
+      if (!imageDataUrl) return;
+
+      detectBtn.disabled = true;
+      setStatus('Sending request...', 'loading');
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(buildRequest(imageDataUrl))
+        });
+
+        if (!response.ok) {
+          throw new Error('API error: ' + response.status + ' ' + response.statusText);
+        }
+
+        const data = await response.json();
+        const content = data.choices[0].message.content;
+        const detections = parseDetections(content);
+
+        responseEl.textContent = content;
+        parsedEl.textContent = JSON.stringify(detections, null, 2);
+        setStatus('Detected ' + detections.length + ' objects', 'success');
+        drawDetections(detections);
+
+      } catch (err) {
+        setStatus('Error: ' + err.message, 'error');
+        responseEl.textContent = 'Error: ' + err.message;
+      } finally {
+        detectBtn.disabled = false;
+      }
+    });
+
+    function buildRequest(imageDataUrl) {
+      return {
+        model: MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Detect objects in this image.
+
+Output format (one object per line):
+name,x1,y1,x2,y2,text
+
+- name: object name
+- x1,y1,x2,y2 are bounding box coordinates
+- text: extracted words on object, empty if none
+- Max 10 objects
+
+Example:
+book,100,200,350,400,Hello World
+cup,500,300,700,550,`
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageDataUrl
+                }
+              }
+            ]
+          }
+        ]
+      };
+    }
+
+    function parseDetections(content) {
+      const lines = content.split('\n');
+      const detections = [];
+      // Pattern: label followed by 4 comma-separated numbers
+      const pattern = /^[^,]+,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+/;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (pattern.test(trimmed)) {
+          // New object
+          const parts = trimmed.split(',');
+          const coords = parts.slice(1, 5).map(s => parseInt(s.trim(), 10));
+          if (coords.some(isNaN)) continue;
+
+          detections.push({
+            label: parts[0].trim(),
+            bbox_2d: coords,
+            text: parts.length > 5 ? parts.slice(5).join(',').trim() || null : null
+          });
+        } else if (detections.length > 0) {
+          // Continuation of previous text
+          const prev = detections[detections.length - 1];
+          prev.text = prev.text ? prev.text + '\n' + trimmed : trimmed;
+        }
+      }
+
+      return detections;
+    }
+
+    function drawImage(img) {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+    }
+
+    function drawDetections(detections) {
+      if (!currentImage) return;
+
+      // Redraw original image
+      drawImage(currentImage);
+
+      const width = canvas.width;
+      const height = canvas.height;
+
+      const colors = [
+        '#00d9ff', '#ff6b6b', '#4ecdc4', '#ffe66d',
+        '#a29bfe', '#fd79a8', '#00b894', '#e17055'
+      ];
+
+      detections.forEach((det, i) => {
+        const bbox = det.bbox_2d;
+        if (!bbox || bbox.length < 4) return;
+
+        // Convert 0-1000 coordinates to pixel coordinates
+        const x1 = Math.floor(bbox[0] / 1000 * width);
+        const y1 = Math.floor(bbox[1] / 1000 * height);
+        const x2 = Math.floor(bbox[2] / 1000 * width);
+        const y2 = Math.floor(bbox[3] / 1000 * height);
+
+        const boxWidth = x2 - x1;
+        const boxHeight = y2 - y1;
+
+        const color = colors[i % colors.length];
+
+        // Draw bounding box
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x1, y1, boxWidth, boxHeight);
+
+        // Prepare label text
+        let label = det.label || 'Object ' + (i + 1);
+
+        // Draw label background
+        ctx.font = 'bold 14px sans-serif';
+        const textMetrics = ctx.measureText(label);
+        const textWidth = textMetrics.width + 8;
+        const textHeight = 20;
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x1, y1 - textHeight, textWidth, textHeight);
+
+        // Draw label text
+        ctx.fillStyle = '#000';
+        ctx.fillText(label, x1 + 4, y1 - 5);
+      });
+    }
+
+    function setStatus(message, type) {
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+    }
+  </script>
+</body>
+</html>
