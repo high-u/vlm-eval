@@ -1,3 +1,5 @@
+# README.md
+
 ```bash
 ./build/bin/llama-server -hf unsloth/Qwen3.5-35B-A3B-GGUF:UD-Q4_K_XL --jinja --ctx-size 32768 --threads 6 --n-cpu-moe 40 --chat-template-kwargs "{\"enable_thinking\": false}" --alias qwen
 

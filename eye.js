@@ -1,6 +1,6 @@
 import fs from "fs";
 
-const DEFAULT_MODEL = "qwen3-35b-a3b";
+const DEFAULT_MODEL = "qwen";
 const DEFAULT_LANG = "ja";
 
 const model = process.argv[2] || DEFAULT_MODEL;
@@ -70,3 +70,4 @@ const response = await fetch("http://127.0.0.1:8080/v1/chat/completions", {
 
 const data = await response.json();
 console.log(JSON.stringify(data, null, 2));
+console.log(data.choices[0].message.content);
